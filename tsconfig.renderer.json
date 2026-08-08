@@ -1,0 +1,19 @@
+// Renderer build: gremlin.ts is loaded directly by a <script> tag, so it has
+// no imports/exports and must be emitted as a plain global script (with
+// ES2022 module mode + no import/export statements, tsc treats it as a
+// script and emits no module wrapper).
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "outDir": "dist/renderer",
+    "rootDir": "src/renderer",
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/renderer/**/*.ts", "src/types.d.ts"]
+}

@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Gremlin Settings</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 20px 22px;
+        background: #fffef5;
+        color: #222;
+        font:
+          500 13px/1.5 -apple-system,
+          sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      h1 {
+        font-size: 17px;
+        margin: 0 0 4px;
+      }
+      p.hint {
+        margin: 0 0 16px;
+        color: #666;
+      }
+      fieldset {
+        border: 2px solid #222;
+        border-radius: 10px;
+        box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.15);
+        margin: 0 0 14px;
+        padding: 10px 14px 14px;
+      }
+      legend {
+        font-weight: 700;
+        padding: 0 6px;
+      }
+      label.provider {
+        display: block;
+        margin: 2px 0;
+        cursor: pointer;
+      }
+      .section {
+        margin-top: 8px;
+      }
+      .section.hidden {
+        display: none;
+      }
+      .row {
+        margin: 8px 0 0;
+      }
+      .row label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 3px;
+      }
+      input[type='text'],
+      input[type='password'],
+      select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 2px solid #222;
+        border-radius: 8px;
+        padding: 6px 8px;
+        font: inherit;
+        background: #fff;
+        color: inherit;
+      }
+      button {
+        border: 2px solid #222;
+        border-radius: 8px;
+        background: #efe9d0;
+        color: #222;
+        font: 600 13px -apple-system, sans-serif;
+        padding: 6px 14px;
+        cursor: pointer;
+        box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+      }
+      button:active {
+        transform: translate(1px, 1px);
+        box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.2);
+      }
+      button.primary {
+        background: #d9ecff;
+      }
+      .status {
+        margin-left: 10px;
+        color: #666;
+      }
+      .status.ok {
+        color: #2c7a2c;
+      }
+      .status.bad {
+        color: #b03030;
+      }
+      a {
+        color: #2456a8;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .footnote {
+        color: #888;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Gremlin brain</h1>
+    <p class="hint">Pick who answers when you chat with the gremlin.</p>
+
+    <fieldset>
+      <legend>Provider</legend>
+      <label class="provider">
+        <input type="radio" name="provider" value="claude" />
+        Claude (Anthropic API key)
+      </label>
+      <label class="provider">
+        <input type="radio" name="provider" value="ollama" />
+        Ollama (local, free)
+      </label>
+    </fieldset>
+
+    <fieldset id="claude-section">
+      <legend>Claude</legend>
+      <div class="row">
+        <label for="claude-key">API key</label>
+        <input
+          id="claude-key"
+          type="password"
+          placeholder="sk-ant-..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div class="footnote">
+          Get a key at <a id="console-link">console.anthropic.com</a>. Stored
+          encrypted on this machine.
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset id="ollama-section">
+      <legend>Ollama</legend>
+      <div class="row">
+        <label for="ollama-url">Server URL</label>
+        <input
+          id="ollama-url"
+          type="text"
+          placeholder="http://localhost:11434"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+      <div class="row">
+        <button id="ollama-test" type="button">Test connection</button>
+        <span id="ollama-status" class="status"></span>
+      </div>
+      <div class="row">
+        <label for="ollama-model">Model</label>
+        <select id="ollama-model">
+          <option value="">(test connection to list models)</option>
+        </select>
+      </div>
+    </fieldset>
+
+    <div class="actions">
+      <button id="cancel" type="button">Cancel</button>
+      <button id="save" type="button" class="primary">Save</button>
+    </div>
+
+    <script src="settings.js"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+// Main-process build (main, brain, preload): CommonJS for Electron/Node.
+// The renderer has its own config (tsconfig.renderer.json) because it must
+// compile as a plain browser script, not a module.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "lib": ["ES2022"],
+    "strict": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/*.ts"]
+}

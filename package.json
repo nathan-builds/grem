@@ -1,0 +1,15 @@
+{
+  "name": "grem",
+  "version": "0.1.0",
+  "description": "A little gremlin that lives on your desktop.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && cp src/renderer/index.html src/renderer/settings.html dist/renderer/",
+    "start": "npm run build && electron ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "typescript": "^7.0.2"
+  }
+}
