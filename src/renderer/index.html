@@ -120,6 +120,55 @@
         color: #888;
         font-style: italic;
       }
+      #timer {
+        position: absolute;
+        display: none;
+        flex-direction: column;
+        transform: translate(-50%, -100%);
+        width: 180px;
+        background: #fffef5;
+        color: #222;
+        border: 2px solid #222;
+        border-radius: 10px;
+        box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.25);
+        font:
+          500 13px/1.35 -apple-system,
+          sans-serif;
+      }
+      #timer::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: -9px;
+        margin-left: -5px;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 7px solid #222;
+      }
+      #timer-title {
+        padding: 6px 9px 0;
+        font-weight: 700;
+      }
+      #timer-form {
+        display: flex;
+        margin: 0;
+      }
+      #timer-input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        outline: none;
+        padding: 5px 9px 7px;
+        font: inherit;
+        color: inherit;
+        background: transparent;
+      }
+      #timer-hint {
+        display: none;
+        padding: 0 9px 6px;
+        color: #b04a3a;
+        font-size: 11px;
+      }
       #chat-form {
         display: flex;
         border-top: 2px solid #222;
@@ -140,6 +189,19 @@
   <body>
     <canvas id="stage"></canvas>
     <div id="bubble"></div>
+    <div id="timer">
+      <div id="timer-title">set a timer</div>
+      <form id="timer-form">
+        <input
+          id="timer-input"
+          type="text"
+          placeholder="5m, 90s, 1h30m..."
+          autocomplete="off"
+          maxlength="20"
+        />
+      </form>
+      <div id="timer-hint">try 5m, 90s, or 1h30m</div>
+    </div>
     <div id="chat">
       <button id="chat-close" type="button" title="Close">x</button>
       <div id="chat-log"></div>

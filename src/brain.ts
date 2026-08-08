@@ -18,6 +18,21 @@ const PHRASES = [
   'busy busy busy',
 ];
 
+const TIMER_DONE_PHRASES = ["TIME'S UP!!", 'DING DING DING!!', 'WAKE UP TIME!!'];
+
+// "1h 30m", "5m", "45s" — used in speech and the context-menu label.
+export function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const parts: string[] = [];
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  if (sec && !h) parts.push(`${sec}s`);
+  return parts.length ? parts.join(' ') : '0s';
+}
+
 // --- Activities ---------------------------------------------------------
 // Scripted multi-phase behaviors. Each one drives the gremlin's position,
 // pose, and a set of procedurally-drawn props (see GremProp in types.d.ts).
@@ -138,6 +153,12 @@ export class Brain {
   hidden = false; // underground mid-dig
   props: GremProp[] = []; // rebuilt every tick by the active activity
   actCooldown = 12; // s until an activity may be rolled again
+  timerEndsAt: number | null = null; // ms epoch; sleep-timer deadline
+  private timerFired = false; // set on fire, consumed by main for confetti
+  menuOpen = false; // frozen in place while the context menu is up
+  // Remaining sleep time captured when he's grabbed mid-nap, so he can go
+  // straight back to sleep when he lands from the drop.
+  private resumeSleep: number | null = null;
   enabledActivities: Record<GremActivity, boolean> = {
     boxes: true,
     fishing: true,
@@ -192,6 +213,15 @@ export class Brain {
   }
 
   pickNextAction(): void {
+    // A sleep timer is pending: whatever interrupted him is over, so go
+    // back to sleep until the deadline (also keeps activities from starting).
+    if (this.timerEndsAt !== null) {
+      const ground = this.groundAt(this.x);
+      if (ground !== null) this.y = ground;
+      this.state = 'sleep';
+      this.stateTime = Infinity;
+      return;
+    }
     if (
       this.actCooldown <= 0 &&
       Math.random() < ACTIVITY_CHANCE &&
@@ -237,6 +267,34 @@ export class Brain {
     this.stateTime = 1 + Math.random() * 2;
   }
 
+  // Sleep timer: nap until the deadline, then wake with a confetti blast.
+  // The deadline is epoch-based so pokes and drags don't pause the clock;
+  // pickNextAction() sends him back to sleep after any interruption.
+  setTimer(seconds: number): void {
+    this.timerEndsAt = Date.now() + seconds * 1000;
+    this.say = { text: `wake me in ${formatDuration(seconds)}...`, until: Date.now() + 2500 };
+    if (this.state === 'held' || this.state === 'falling' || this.chatting)
+      return; // he'll doze off once he's back on the ground / done talking
+    this.cancelActivity();
+    const ground = this.groundAt(this.x);
+    if (ground !== null) this.y = ground;
+    this.state = 'sleep';
+    this.stateTime = Infinity;
+  }
+
+  cancelTimer(): void {
+    if (this.timerEndsAt === null) return;
+    this.timerEndsAt = null;
+    this.wake();
+  }
+
+  // True exactly once after the timer fires; main uses it to launch confetti.
+  consumeTimerFired(): boolean {
+    const fired = this.timerFired;
+    this.timerFired = false;
+    return fired;
+  }
+
   // Chat mode: sit still (glasses on, keyboard out) so the chat bubble stays
   // anchored, and keep quiet (no random phrases) until the conversation ends.
   startChat(): void {
@@ -260,6 +318,7 @@ export class Brain {
   poke(): void {
     if (this.state === 'held' || this.chatting) return;
     this.cancelActivity();
+    this.resumeSleep = null; // a poke is an intentional wake-up
     this.state = 'surprised';
     this.stateTime = SURPRISED_TIME;
     const text = PHRASES[Math.floor(Math.random() * PHRASES.length)];
@@ -269,6 +328,7 @@ export class Brain {
   grab(x: number, y: number): void {
     if (this.chatting) return; // he's busy talking
     this.cancelActivity();
+    this.resumeSleep = this.state === 'sleep' ? this.stateTime : null;
     this.state = 'held';
     this.x = x;
     this.y = y + 34; // dangle below the cursor
@@ -289,8 +349,34 @@ export class Brain {
 
   tick(dt: number): Omit<GremFrame, 'hover'> {
     if (this.say && Date.now() > this.say.until) this.say = null;
+
+    // Context menu is up: freeze on the spot (keep last frame's props) so he
+    // doesn't wander out from under it. Held/falling still resolve normally.
+    if (
+      this.menuOpen &&
+      this.state !== 'held' &&
+      this.state !== 'falling'
+    ) {
+      if (this.state === 'walk' || this.state === 'run') this.pose = 'idle';
+      return this.frame();
+    }
+
     this.actCooldown -= dt;
     this.props = [];
+
+    if (this.timerEndsAt !== null && Date.now() >= this.timerEndsAt) {
+      this.timerEndsAt = null;
+      this.timerFired = true;
+      const text =
+        TIMER_DONE_PHRASES[Math.floor(Math.random() * TIMER_DONE_PHRASES.length)];
+      this.say = { text, until: Date.now() + 3000 };
+      // Jolt awake unless he's dangling from the cursor or mid-conversation.
+      if (this.state !== 'held' && !this.chatting) {
+        this.cancelActivity();
+        this.state = 'surprised';
+        this.stateTime = SURPRISED_TIME;
+      }
+    }
 
     switch (this.state) {
       case 'walk':
@@ -340,11 +426,19 @@ export class Brain {
         if (ground !== null && this.y >= ground) {
           this.y = ground;
           this.vy = 0;
-          this.state = 'idle';
-          this.stateTime = 1 + Math.random() * 2;
+          if (this.resumeSleep !== null) {
+            // He was napping when picked up: settle right back to sleep.
+            this.state = 'sleep';
+            this.stateTime = this.resumeSleep;
+            this.resumeSleep = null;
+          } else {
+            this.state = 'idle';
+            this.stateTime = 1 + Math.random() * 2;
+          }
         } else if (ground === null && this.y > 20000) {
           // Fell into the void between displays; respawn.
           this.spawned = false;
+          this.resumeSleep = null; // that fall would wake anyone
           this.setDisplays(
             this.displays.map((d) => ({ id: d.id, workArea: d.workArea }))
           );
@@ -379,6 +473,10 @@ export class Brain {
         this.state === 'chatting' ? 'sit' : (this.state as GremlinPose);
     }
 
+    return this.frame();
+  }
+
+  private frame(): Omit<GremFrame, 'hover'> {
     return {
       x: this.x,
       y: this.y,

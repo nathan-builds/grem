@@ -10,7 +10,7 @@ import {
   Display,
 } from 'electron';
 import * as path from 'path';
-import { Brain } from './brain';
+import { Brain, formatDuration } from './brain';
 import { Chat, listOllamaModels } from './chat';
 import { loadSettings, saveSettings } from './settings';
 
@@ -22,6 +22,8 @@ let settingsWin: BrowserWindow | null = null;
 // The overlay window the chat bubble is currently open in. While set, that
 // window stays interactive + focusable so the user can type.
 let chatWin: BrowserWindow | null = null;
+// Same, for the custom timer-duration prompt.
+let promptWin: BrowserWindow | null = null;
 
 // Hover detection lives here, not in the renderer: forwarded mousemove events
 // (setIgnoreMouseEvents forward:true) stop arriving on macOS whenever another
@@ -42,9 +44,10 @@ function updateHover(): boolean {
       p.y >= brain.y - SIZE - HOVER_PAD &&
       p.y <= brain.y + HOVER_PAD);
 
-  // While the chat bubble is open its window must stay interactive no matter
-  // where the cursor is, so skip the click-through toggling entirely.
-  if (chatWin) return hover;
+  // While the chat bubble or timer prompt is open its window must stay
+  // interactive no matter where the cursor is, so skip the click-through
+  // toggling entirely.
+  if (chatWin || promptWin) return hover;
 
   let target: BrowserWindow | null = null;
   if (hover) {
@@ -99,19 +102,35 @@ function createWindowForDisplay(display: Display): void {
   windows.set(display.id, win);
 }
 
-// --- Chat -------------------------------------------------------------------
-// Overlay windows are click-through and non-focusable by default; chatting
-// needs both, so we flip them on for the gremlin's window and restore after.
-function openChat(win: BrowserWindow): void {
-  if (chatWin === win) return;
-  if (chatWin) closeChat();
-  brain.startChat();
-  chatWin = win;
+// --- Focusable overlays -------------------------------------------------
+// Overlay windows are click-through and non-focusable by default; typing in
+// them (chat, timer prompt) needs both, so we flip them on for the gremlin's
+// window and restore after.
+function focusOverlay(win: BrowserWindow): void {
   win.setIgnoreMouseEvents(false);
   win.setFocusable(true);
   // Changing focusability can drop the always-on-top level; re-assert it.
   win.setAlwaysOnTop(true, 'screen-saver');
   win.focus();
+}
+
+function unfocusOverlay(win: BrowserWindow): void {
+  if (!win.isDestroyed()) {
+    win.setIgnoreMouseEvents(true, { forward: true });
+    win.setFocusable(false);
+    win.setAlwaysOnTop(true, 'screen-saver');
+  }
+  if (interactiveWin === win) interactiveWin = null;
+}
+
+// --- Chat -------------------------------------------------------------------
+function openChat(win: BrowserWindow): void {
+  if (chatWin === win) return;
+  if (chatWin) closeChat();
+  closeTimerPrompt();
+  brain.startChat();
+  chatWin = win;
+  focusOverlay(win);
   win.webContents.send('chat-open', chat.history);
 }
 
@@ -120,12 +139,24 @@ function closeChat(): void {
   const win = chatWin;
   chatWin = null;
   brain.endChat();
-  if (!win.isDestroyed()) {
-    win.setIgnoreMouseEvents(true, { forward: true });
-    win.setFocusable(false);
-    win.setAlwaysOnTop(true, 'screen-saver');
-  }
-  if (interactiveWin === win) interactiveWin = null;
+  unfocusOverlay(win);
+}
+
+// --- Timer prompt -------------------------------------------------------
+function openTimerPrompt(win: BrowserWindow): void {
+  if (promptWin === win) return;
+  closeTimerPrompt();
+  if (chatWin) closeChat();
+  promptWin = win;
+  focusOverlay(win);
+  win.webContents.send('timer-prompt');
+}
+
+function closeTimerPrompt(): void {
+  if (!promptWin) return;
+  const win = promptWin;
+  promptWin = null;
+  unfocusOverlay(win);
 }
 
 function syncWindows(): void {
@@ -135,6 +166,7 @@ function syncWindows(): void {
   for (const [id, win] of windows) {
     if (!liveIds.has(id)) {
       if (win === chatWin) closeChat();
+      if (win === promptWin) closeTimerPrompt();
       win.destroy();
       windows.delete(id);
     }
@@ -151,20 +183,10 @@ function syncWindows(): void {
 }
 
 function createTray(): void {
-  let icon = nativeImage.createEmpty();
-  try {
-    const sheet = nativeImage.createFromPath(
-      path.join(__dirname, '..', 'assets', 'gremlin-sheet.png')
-    );
-    if (!sheet.isEmpty()) {
-      const cell = Math.floor(sheet.getSize().width / 4);
-      icon = sheet
-        .crop({ x: 0, y: 0, width: cell, height: cell })
-        .resize({ width: 20, height: 20 });
-    }
-  } catch (_) {
-    // fall through to text-only tray
-  }
+  // tray-icon.png is 20x20; Electron picks up tray-icon@2x.png for retina.
+  const icon = nativeImage.createFromPath(
+    path.join(__dirname, '..', 'assets', 'tray-icon.png')
+  );
   tray = new Tray(icon);
   if (icon.isEmpty()) tray.setTitle('grem');
   tray.setToolTip('Gremlin');
@@ -224,23 +246,75 @@ app.whenReady().then(() => {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
     const frame: GremFrame = { ...brain.tick(dt), hover: updateHover() };
+    const confetti = brain.consumeTimerFired();
     for (const win of windows.values()) {
-      if (!win.isDestroyed()) win.webContents.send('gremlin-frame', frame);
+      if (win.isDestroyed()) continue;
+      win.webContents.send('gremlin-frame', frame);
+      if (confetti) {
+        win.webContents.send('confetti', { x: brain.x, y: brain.y });
+      }
     }
   }, 1000 / 60);
 });
 
+const TIMER_PRESETS: { label: string; seconds: number }[] = [
+  { label: '30 seconds', seconds: 30 },
+  { label: '1 minute', seconds: 60 },
+  { label: '5 minutes', seconds: 5 * 60 },
+  { label: '10 minutes', seconds: 10 * 60 },
+  { label: '30 minutes', seconds: 30 * 60 },
+  { label: '1 hour', seconds: 60 * 60 },
+];
+
 ipcMain.on('gremlin-context-menu', (event, { x, y }: { x: number; y: number }) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return;
+  const timerItem: Electron.MenuItemConstructorOptions =
+    brain.timerEndsAt !== null
+      ? {
+          label: `Cancel timer (${formatDuration(
+            (brain.timerEndsAt - Date.now()) / 1000
+          )} left)`,
+          click: () => brain.cancelTimer(),
+        }
+      : {
+          label: 'Set timer',
+          submenu: [
+            ...TIMER_PRESETS.map((p) => ({
+              label: p.label,
+              click: () => brain.setTimer(p.seconds),
+            })),
+            { type: 'separator' as const },
+            { label: 'Custom…', click: () => openTimerPrompt(win) },
+          ],
+        };
   const menu = Menu.buildFromTemplate([
     { label: 'Chat', click: () => openChat(win) },
-    brain.state === 'sleep'
+    timerItem,
+    brain.state === 'sleep' && brain.timerEndsAt === null
       ? { label: 'Wake up', click: () => brain.wake() }
       : { label: 'Sleep here', click: () => brain.sleep() },
   ]);
-  menu.popup({ window: win, x: Math.round(x), y: Math.round(y) });
+  // Hold him still while the menu is up so it doesn't detach from him.
+  brain.menuOpen = true;
+  menu.popup({
+    window: win,
+    x: Math.round(x),
+    y: Math.round(y),
+    callback: () => {
+      brain.menuOpen = false;
+    },
+  });
 });
+
+// --- Timer IPC ------------------------------------------------------------
+ipcMain.on('timer-set', (_e, seconds: number) => {
+  closeTimerPrompt();
+  if (Number.isFinite(seconds) && seconds > 0) {
+    brain.setTimer(Math.min(seconds, 24 * 3600));
+  }
+});
+ipcMain.on('timer-prompt-close', () => closeTimerPrompt());
 
 ipcMain.on('poke', () => brain.poke());
 ipcMain.on('grab', (_e, { x, y }: { x: number; y: number }) => brain.grab(x, y));

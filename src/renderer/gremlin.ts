@@ -17,6 +17,10 @@ const chatLog = document.getElementById('chat-log') as HTMLDivElement;
 const chatForm = document.getElementById('chat-form') as HTMLFormElement;
 const chatInput = document.getElementById('chat-input') as HTMLInputElement;
 const chatCloseBtn = document.getElementById('chat-close') as HTMLButtonElement;
+const timerBox = document.getElementById('timer') as HTMLDivElement;
+const timerForm = document.getElementById('timer-form') as HTMLFormElement;
+const timerInput = document.getElementById('timer-input') as HTMLInputElement;
+const timerHint = document.getElementById('timer-hint') as HTMLDivElement;
 const ctx = canvas.getContext('2d')!;
 
 function resize(): void {
@@ -449,9 +453,100 @@ function drawProp(p: GremProp): void {
   ctx.restore();
 }
 
+// --- Confetti -----------------------------------------------------------
+// Fired when a sleep timer goes off. Each overlay window runs its own local
+// particle burst from the gremlin's (global) position, so pieces arc onto
+// neighboring displays too.
+interface ConfettiPiece {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  w: number;
+  h: number;
+  rot: number;
+  vrot: number;
+  color: string;
+  life: number; // seconds lived
+  maxLife: number;
+  phase: number; // flutter offset
+}
+
+const CONFETTI_COLORS = [
+  '#ff5252',
+  '#ffb340',
+  '#ffe14d',
+  '#5ce07e',
+  '#4dc3ff',
+  '#b06cff',
+  '#ff7ad0',
+];
+const CONFETTI_COUNT = 160;
+const CONFETTI_GRAVITY = 850; // px/s^2
+const CONFETTI_MAX_FALL = 160; // px/s terminal velocity (paper flutters)
+
+let confetti: ConfettiPiece[] = [];
+
+window.grem.onConfetti((origin) => {
+  const ox = origin.x - DX;
+  const oy = origin.y - DY - 50; // burst from around his head
+  for (let i = 0; i < CONFETTI_COUNT; i++) {
+    // Upward fan with a wide spread so pieces shower the whole screen.
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.25;
+    const speed = 350 + Math.random() * 750;
+    confetti.push({
+      x: ox,
+      y: oy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      w: 4 + Math.random() * 3,
+      h: 5 + Math.random() * 5,
+      rot: Math.random() * Math.PI * 2,
+      vrot: (Math.random() - 0.5) * 14,
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+      life: 0,
+      maxLife: 2.6 + Math.random() * 1.6,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+});
+
+function updateConfetti(dt: number): void {
+  for (const p of confetti) {
+    p.life += dt;
+    p.vy = Math.min(p.vy + CONFETTI_GRAVITY * dt, CONFETTI_MAX_FALL);
+    p.vx *= Math.exp(-1.4 * dt); // air drag on the launch kick
+    p.x += (p.vx + Math.sin(p.life * 5 + p.phase) * 45) * dt;
+    p.y += p.vy * dt;
+    p.rot += p.vrot * dt;
+  }
+  confetti = confetti.filter((p) => p.life < p.maxLife);
+}
+
+function drawConfetti(): void {
+  for (const p of confetti) {
+    const fade = 1 - p.life / p.maxLife;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, fade * 3); // opaque until the last third
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+    // Fake 3D tumble by squashing the width.
+    ctx.scale(Math.abs(Math.sin(p.life * 7 + p.phase)) * 0.8 + 0.2, 1);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    ctx.restore();
+  }
+}
+
 // --- Drawing ----------------------------------------------------------------
+let lastDrawNow = 0;
+
 function draw(now: number): void {
+  const dt = Math.min((now - lastDrawNow) / 1000, 0.05);
+  lastDrawNow = now;
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+  if (confetti.length) updateConfetti(dt);
 
   if (frame && sheet) {
     const props = frame.props || [];
@@ -533,19 +628,28 @@ function draw(now: number): void {
         bubble.style.display = 'none';
       }
 
-      if (chatOpen) {
-        // Keep the bubble on-screen even when he sits near a screen edge.
-        const half = chatBox.offsetWidth / 2;
-        const cx = Math.max(half + 8, Math.min(window.innerWidth - half - 8, lx));
-        chatBox.style.left = cx + 'px';
-        chatBox.style.top = ly - SIZE - 14 + 'px';
-      }
+    if (chatOpen) {
+      // Keep the bubble on-screen even when he sits near a screen edge.
+      const half = chatBox.offsetWidth / 2;
+      const cx = Math.max(half + 8, Math.min(window.innerWidth - half - 8, lx));
+      chatBox.style.left = cx + 'px';
+      chatBox.style.top = ly - SIZE - 14 + 'px';
+    }
+
+    if (timerOpen) {
+      const half = timerBox.offsetWidth / 2;
+      const cx = Math.max(half + 8, Math.min(window.innerWidth - half - 8, lx));
+      timerBox.style.left = cx + 'px';
+      timerBox.style.top = ly - SIZE - 14 + 'px';
+    }
     } else {
       bubble.style.display = 'none';
     }
   } else {
     bubble.style.display = 'none';
   }
+
+  if (confetti.length) drawConfetti();
 
   requestAnimationFrame(draw);
 }
@@ -575,6 +679,10 @@ function closeChat(): void {
 }
 
 window.grem.onChatOpen((history) => {
+  // The timer prompt can't stay up under the chat box (main already
+  // restored click-through for it).
+  timerOpen = false;
+  timerBox.style.display = 'none';
   chatOpen = true;
   chatWaiting = false;
   typingEl = null;
@@ -616,7 +724,55 @@ chatForm.addEventListener('submit', (e) => {
 chatCloseBtn.addEventListener('click', closeChat);
 
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeChat();
+  if (e.key === 'Escape') {
+    closeChat();
+    closeTimerPrompt();
+  }
+});
+
+// --- Timer prompt -----------------------------------------------------------
+let timerOpen = false;
+
+// "1h30m", "5m", "90s", "1h", or a bare number (minutes). Decimals allowed.
+function parseDuration(text: string): number | null {
+  const t = text.trim().toLowerCase().replace(/\s+/g, '');
+  if (!t) return null;
+  if (/^\d+(\.\d+)?$/.test(t)) return parseFloat(t) * 60;
+  const m = t.match(/^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$/);
+  if (!m || (!m[1] && !m[2] && !m[3])) return null;
+  const seconds =
+    (m[1] ? parseFloat(m[1]) * 3600 : 0) +
+    (m[2] ? parseFloat(m[2]) * 60 : 0) +
+    (m[3] ? parseFloat(m[3]) : 0);
+  return seconds > 0 ? seconds : null;
+}
+
+function closeTimerPrompt(): void {
+  if (!timerOpen) return;
+  timerOpen = false;
+  timerBox.style.display = 'none';
+  window.grem.timerPromptClose();
+}
+
+window.grem.onTimerPrompt(() => {
+  timerOpen = true;
+  timerInput.value = '';
+  timerHint.style.display = 'none';
+  timerBox.style.display = 'flex';
+  setTimeout(() => timerInput.focus(), 50);
+});
+
+timerForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const seconds = parseDuration(timerInput.value);
+  if (seconds === null) {
+    timerHint.style.display = 'block';
+    timerInput.select();
+    return;
+  }
+  timerOpen = false;
+  timerBox.style.display = 'none';
+  window.grem.timerSet(seconds); // main restores click-through
 });
 
 // --- Mouse interaction ------------------------------------------------------
@@ -636,6 +792,11 @@ window.addEventListener('contextmenu', (e) => {
 });
 
 window.addEventListener('mousedown', (e) => {
+  if (timerOpen) {
+    // Clicking anywhere outside the prompt dismisses it.
+    if (!timerBox.contains(e.target as Node)) closeTimerPrompt();
+    return;
+  }
   if (chatOpen) {
     // While chatting the whole window is interactive; a click anywhere
     // outside the chat bubble (and not on the gremlin) dismisses it.

@@ -98,6 +98,10 @@ interface GremApi {
   chatClose(): void;
   onChatOpen(cb: (history: ChatMessage[]) => void): void;
   onChatReply(cb: (text: string) => void): void;
+  timerSet(seconds: number): void;
+  timerPromptClose(): void;
+  onTimerPrompt(cb: () => void): void;
+  onConfetti(cb: (origin: { x: number; y: number }) => void): void;
 }
 
 // Exposed to the settings window by the same preload script.

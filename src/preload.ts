@@ -14,6 +14,13 @@ const api: GremApi = {
     ipcRenderer.on('chat-open', (_e, history: ChatMessage[]) => cb(history)),
   onChatReply: (cb) =>
     ipcRenderer.on('chat-reply', (_e, text: string) => cb(text)),
+  timerSet: (seconds) => ipcRenderer.send('timer-set', seconds),
+  timerPromptClose: () => ipcRenderer.send('timer-prompt-close'),
+  onTimerPrompt: (cb) => ipcRenderer.on('timer-prompt', () => cb()),
+  onConfetti: (cb) =>
+    ipcRenderer.on('confetti', (_e, origin: { x: number; y: number }) =>
+      cb(origin)
+    ),
 };
 
 const settingsApi: GremSettingsApi = {

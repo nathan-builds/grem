@@ -1,15 +1,64 @@
 {
   "name": "grem",
+  "productName": "grem",
   "version": "0.1.0",
   "description": "A little gremlin that lives on your desktop.",
+  "author": "Nathan Hans",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json && cp src/renderer/index.html src/renderer/settings.html dist/renderer/",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist": "npm run build && electron-builder --mac --win"
   },
   "license": "MIT",
   "devDependencies": {
     "electron": "^37.0.0",
+    "electron-builder": "^26.15.3",
     "typescript": "^7.0.2"
+  },
+  "build": {
+    "appId": "com.gremapp.grem",
+    "productName": "grem",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": "universal"
+        },
+        {
+          "target": "zip",
+          "arch": "universal"
+        }
+      ],
+      "artifactName": "grem-macos.${ext}",
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": "x64"
+        }
+      ],
+      "artifactName": "grem-windows-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true
+    }
   }
 }
