@@ -36,7 +36,8 @@ function updateHover(): boolean {
   const p = screen.getCursorScreenPoint();
   const hover =
     brain.state === 'held' || // never drop interactivity mid-drag
-    (p.x >= brain.x - SIZE / 2 - HOVER_PAD &&
+    (!brain.hidden && // underground mid-dig: nothing to hover
+      p.x >= brain.x - SIZE / 2 - HOVER_PAD &&
       p.x <= brain.x + SIZE / 2 + HOVER_PAD &&
       p.y >= brain.y - SIZE - HOVER_PAD &&
       p.y <= brain.y + HOVER_PAD);
@@ -188,7 +189,7 @@ function openSettings(): void {
   }
   settingsWin = new BrowserWindow({
     width: 420,
-    height: 560,
+    height: 700,
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -209,6 +210,7 @@ function openSettings(): void {
 app.whenReady().then(() => {
   if (app.dock) app.dock.hide();
 
+  brain.setEnabledActivities(loadSettings().activities);
   syncWindows();
   screen.on('display-added', syncWindows);
   screen.on('display-removed', syncWindows);
@@ -258,7 +260,10 @@ ipcMain.on('chat-close', () => closeChat());
 
 // --- Settings IPC -----------------------------------------------------------
 ipcMain.handle('settings-get', () => loadSettings());
-ipcMain.handle('settings-save', (_e, s: GremSettingsData) => saveSettings(s));
+ipcMain.handle('settings-save', (_e, s: GremSettingsData) => {
+  saveSettings(s);
+  brain.setEnabledActivities(s.activities);
+});
 ipcMain.handle('ollama-models', (_e, url: string) => listOllamaModels(url));
 ipcMain.on('open-external', (_e, url: string) => {
   if (url.startsWith('https://')) shell.openExternal(url);

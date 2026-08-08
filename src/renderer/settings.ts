@@ -15,6 +15,22 @@ const consoleLink = document.getElementById('console-link') as HTMLAnchorElement
 const saveBtn = document.getElementById('save') as HTMLButtonElement;
 const cancelBtn = document.getElementById('cancel') as HTMLButtonElement;
 
+const activityChecks: Record<GremActivity, HTMLInputElement> = {
+  boxes: document.getElementById('act-boxes') as HTMLInputElement,
+  fishing: document.getElementById('act-fishing') as HTMLInputElement,
+  cooking: document.getElementById('act-cooking') as HTMLInputElement,
+  parachute: document.getElementById('act-parachute') as HTMLInputElement,
+  digging: document.getElementById('act-digging') as HTMLInputElement,
+};
+
+function currentActivities(): Record<GremActivity, boolean> {
+  const out = {} as Record<GremActivity, boolean>;
+  for (const key of Object.keys(activityChecks) as GremActivity[]) {
+    out[key] = activityChecks[key].checked;
+  }
+  return out;
+}
+
 function currentProvider(): 'claude' | 'ollama' {
   for (const r of providerRadios) {
     if (r.checked && r.value === 'ollama') return 'ollama';
@@ -73,6 +89,9 @@ async function init(): Promise<void> {
   for (const r of providerRadios) r.checked = r.value === s.provider;
   claudeKeyInput.value = s.claudeApiKey;
   ollamaUrlInput.value = s.ollamaUrl;
+  for (const key of Object.keys(activityChecks) as GremActivity[]) {
+    activityChecks[key].checked = s.activities[key] !== false;
+  }
   if (s.ollamaModel) setModelOptions([s.ollamaModel], s.ollamaModel);
   refreshSections();
   // Quietly try to populate the model list from the saved URL.
@@ -93,6 +112,7 @@ saveBtn.addEventListener('click', async () => {
     claudeApiKey: claudeKeyInput.value.trim(),
     ollamaUrl: ollamaUrlInput.value.trim() || 'http://localhost:11434',
     ollamaModel: ollamaModelSelect.value,
+    activities: currentActivities(),
   });
   window.close();
 });

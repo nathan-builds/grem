@@ -5,11 +5,20 @@ import { app, safeStorage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 
+const DEFAULT_ACTIVITIES: Record<GremActivity, boolean> = {
+  boxes: true,
+  fishing: true,
+  cooking: true,
+  parachute: true,
+  digging: true,
+};
+
 const DEFAULTS: GremSettingsData = {
   provider: 'claude',
   claudeApiKey: '',
   ollamaUrl: 'http://localhost:11434',
   ollamaModel: '',
+  activities: { ...DEFAULT_ACTIVITIES },
 };
 
 // On-disk shape: the key is stored either encrypted (base64) or, if OS-level
@@ -20,6 +29,7 @@ interface SettingsFile {
   claudeApiKeyPlain?: string;
   ollamaUrl?: string;
   ollamaModel?: string;
+  activities?: Partial<Record<GremActivity, boolean>>;
 }
 
 function settingsPath(): string {
@@ -52,6 +62,8 @@ export function loadSettings(): GremSettingsData {
     claudeApiKey,
     ollamaUrl: file.ollamaUrl || DEFAULTS.ollamaUrl,
     ollamaModel: file.ollamaModel || '',
+    // Missing keys (e.g. settings saved by an older version) default to on.
+    activities: { ...DEFAULT_ACTIVITIES, ...(file.activities || {}) },
   };
 }
 
@@ -60,6 +72,7 @@ export function saveSettings(s: GremSettingsData): void {
     provider: s.provider,
     ollamaUrl: s.ollamaUrl,
     ollamaModel: s.ollamaModel,
+    activities: s.activities,
   };
   if (s.claudeApiKey) {
     if (safeStorage.isEncryptionAvailable()) {
