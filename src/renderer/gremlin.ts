@@ -85,6 +85,7 @@ const EXTRA_ANIMS: Record<string, ExtraAnim> = {
 interface CellAlign {
   cx: number;
   bottomGap: number;
+  scale: number; // per-cell size correction so the body stays a constant size
 }
 
 interface Sheet {
@@ -145,9 +146,10 @@ function loadSheet(
     // Measure each cell's opaque bounding box so we can anchor feet to the
     // ground and center the body horizontally when drawing.
     const align: CellAlign[] = [];
+    const areas: number[] = [];
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
-        let minX = cell, maxX = -1, maxY = -1;
+        let minX = cell, maxX = -1, maxY = -1, area = 0;
         for (let y = 0; y < cell; y++) {
           for (let x = 0; x < cell; x++) {
             const gx = col * cell + x;
@@ -156,16 +158,34 @@ function loadSheet(
               if (x < minX) minX = x;
               if (x > maxX) maxX = x;
               if (y > maxY) maxY = y;
+              area++;
             }
           }
         }
+        areas[row * cols + col] = area;
         if (maxX < 0) {
-          align[row * cols + col] = { cx: 0, bottomGap: 0 };
+          align[row * cols + col] = { cx: 0, bottomGap: 0, scale: 1 };
         } else {
           align[row * cols + col] = {
             cx: (minX + maxX + 1) / 2 - cell / 2,
             bottomGap: cell - (maxY + 1),
+            scale: 1,
           };
+        }
+      }
+    }
+
+    // Generated cells are framed inconsistently (e.g. the walk row can be
+    // drawn far more zoomed-in than idle), which makes the gremlin visibly
+    // grow or shrink when the pose changes. Opaque pixel area is a stable
+    // proxy for body size regardless of limb position, so scale each cell
+    // toward the sheet's median area.
+    const filled = areas.filter((a) => a > 0).sort((a, b) => a - b);
+    if (filled.length) {
+      const median = filled[Math.floor(filled.length / 2)];
+      for (let i = 0; i < align.length; i++) {
+        if (areas[i] > 0) {
+          align[i].scale = Math.min(1.25, Math.max(0.6, Math.sqrt(median / areas[i])));
         }
       }
     }
@@ -594,8 +614,9 @@ function draw(now: number): void {
       const sy = Math.floor(cellIdx / sh.cols) * sh.cell;
       const lx = frame.x - DX;
       const ly = frame.y - DY;
-      const align = sh.align[cellIdx] || { cx: 0, bottomGap: 0 };
-      const scale = SIZE / sh.cell;
+      const align = sh.align[cellIdx] || { cx: 0, bottomGap: 0, scale: 1 };
+      const drawSize = SIZE * align.scale;
+      const scale = drawSize / sh.cell;
 
       ctx.save();
       ctx.translate(lx, ly);
@@ -606,10 +627,10 @@ function draw(now: number): void {
         sy,
         sh.cell,
         sh.cell,
-        -SIZE / 2 - align.cx * scale,
-        -SIZE + align.bottomGap * scale,
-        SIZE,
-        SIZE
+        -drawSize / 2 - align.cx * scale,
+        -drawSize + align.bottomGap * scale,
+        drawSize,
+        drawSize
       );
       ctx.restore();
     }
